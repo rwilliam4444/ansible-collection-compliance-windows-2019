@@ -1,0 +1,19 @@
+---
+# defaults file for ansible-role-compliance-windows-scm-policy-2019
+
+remediate: "NO"
+approved_windows_ver: "2019"
+execute_18_3_1: "YES"
+execute_18_3_2: "YES"
+execute_18_3_3: "YES"
+execute_18_3_4: "YES"
+execute_18_3_5: "YES"
+execute_18_3_6: "YES"
+LocalAccountTokenFilterPolicy_cis: "1"
+Start_cis: "4"
+SMB1_cis: "0"
+DisableExceptionChainValidation_cis: "0"
+LdapEnforceChannelBinding_cis: "2"
+UseLogonCredential_cis: "0"
+services_reg: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\"
+control_reg: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\"

@@ -1,0 +1,219 @@
+---
+# ==============================================================
+# tasks file for ansible-role-compliance-windows-scm-policy-2019
+# ==============================================================
+#
+#
+# ==================================================================
+# collect hostname and ip address information
+# ==================================================================
+- name: collect hostname
+  win_shell: >
+    $sysinfo=Get-WmiObject -Class win32_computersystem;
+    $server="{0}.{1}" -f $sysinfo.Name, $sysinfo.domain;
+    $server
+  register: FQDN_hostname
+  ignore_errors: true
+
+- name: set output
+  set_fact:
+   FQDN_hostname: "{{ FQDN_hostname.stdout_lines | join }}"
+
+- block:
+   - debug:
+      msg:
+       - "The FQDN hostname is.....{{ FQDN_hostname }}"
+
+- name: collect ip address
+  win_shell: >
+     (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -ne
+     $null -and $_.netadapter.status -ne "Disconnected"}).ipv4address.ipaddress
+  register: default_ipv4_address
+  ignore_errors: true
+
+- name: set output
+  set_fact:
+   default_ipv4_address: "{{ default_ipv4_address.stdout_lines }}"
+
+- block:
+   - debug:
+      msg:
+       - "The default_ipv4_address is.....{{ default_ipv4_address }}"
+
+
+# ==================================================================
+# Get O\S information
+# ==================================================================
+- name: "Get Operating Systerm version information"
+  win_shell: (get-WMIobject win32_operatingsystem).Name
+  register: Win_os_ver_out
+  ignore_errors: true
+
+- name: "set output variable"
+  set_fact:
+   Win_os_ver_out="{{ Win_os_ver_out.stdout_lines|list|join }}"
+
+- name: "check and ensure if the windows server is a 2019 server"
+  fail:
+   msg: "This server is NOT a windows 2019 server: {{ Win_os_ver_out }}"
+  when: approved_windows_ver not in Win_os_ver_out
+
+- block:
+   - debug:
+      msg: "This server IS a windows 2019 server: {{ Win_os_ver_out }}"
+  when: approved_windows_ver in Win_os_ver_out
+#
+#
+# ==================================================================
+# Get server role information
+# ==================================================================
+- name: "Get server role information"
+  win_shell: wmic.exe Computersystem get DomainRole
+  register: DomainR_out
+  ignore_errors: true
+
+- name: "set output variable"
+  set_fact:
+   DomainR_out: "{{ DomainR_out.stdout|regex_search(regexp,'\\1')|list|join }}"
+  vars:
+   regexp: 'DomainRole\s+(\d+)'
+
+- block:
+   - debug:
+      msg:
+       - "The DomainRole is NOT a Backup DC or a DC: '{{ DomainR_out }}'."
+  when: DomainR_out != "4" and DomainR_out != "5"
+
+- block:
+   - debug:
+      msg:
+       - "The DomainRole is a Backup DC or a DC:'{{ DomainR_out }}'."
+  when: DomainR_out == "4" or DomainR_out == "5"
+
+
+# =============================================================================
+# 18.3.1 (L1) IF SET TO 0 - IT WILL DISABLE ANSIBLE FROM LOGGING IN.  MS only
+# =============================================================================
+- name: "18.3.1 -IF SET TO 0 - IT WILL DISABLE ANSIBLE FROM LOGGING IN. MS only"
+  include_tasks: win_check.yml
+  vars:
+   title: "The LocalAccountTokenFilterPolicy setting (18.3.1)"
+   check_against: "{{ LocalAccountTokenFilterPolicy_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -name
+     "LocalAccountTokenFilterPolicy"|Select-Object
+     -ExpandProperty "LocalAccountTokenFilterPolicy"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+    name: "LocalAccountTokenFilterPolicy"
+    data: "1"
+    type: dword
+  when: execute_18_3_1 == "YES" and DomainR_out != "4" and DomainR_out != "5"
+
+
+# =============================================================================
+# 18.3.2 (L1) Ensure 'Configure SMB v1 client driver' is set to 'Enabled:
+# Disable driver (recommended)' (Scored)
+# =============================================================================
+- name: "18.3.2 -Ensure 'Configure SMB v1 client driver'='Enabled: Dsble drvr'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The Start setting (18.3.2)"
+   check_against: "{{ Start_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\mrxsmb10" -name
+     "Start"|Select-Object
+     -ExpandProperty "Start"
+   win_regedit_cmd:
+    path: HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\mrxsmb10
+    name: "Start"
+    data: "4"
+    type: dword
+  when: execute_18_3_2 == "YES"
+
+
+# =============================================================================
+# 18.3.3 (L1) Ensure 'Configure SMB v1 server' is set to 'Disabled' (Scored)
+# =============================================================================
+- name: "18.3.3 (L1) Ensure 'Configure SMB v1 server' is set to 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The SMB1 setting (18.3.3)"
+   check_against: "{{ SMB1_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+     -name "SMB1"|Select-Object -ExpandProperty "SMB1"
+   win_regedit_cmd:
+    path: "{{ services_reg }}LanmanServer\\Parameters"
+    name: "SMB1"
+    data: "0"
+    type: dword
+  when: execute_18_3_3 == "YES"
+
+
+# =============================================================================
+# 18.3.4 (L1) Ensure 'Enable Structured Exception Handling Overwrite
+# Protection (SEHOP)' is set to 'Enabled' (Scored)
+# =============================================================================
+- name: "18.3.4 - 'Enbl Strctrd Excptn Hndlng Ovrwrt Prtctn (SEHOP)'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableExceptionChainValidation setting (18.3.4)"
+   check_against: "{{ DisableExceptionChainValidation_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session
+     Manager\kernel" -name "DisableExceptionChainValidation"|Select-Object
+     -ExpandProperty "DisableExceptionChainValidation"
+   win_regedit_cmd:
+    path: "{{ control_reg }}Session Manager\\kernel"
+    name: "DisableExceptionChainValidation"
+    data: "0"
+    type: dword
+  when: execute_18_3_4 == "YES"
+
+
+# =============================================================================
+# 18.3.5 (L1) Ensure 'Extended Protection for LDAP Authentication
+# (Domain Controllers only)' is set to 'Enabled: Enabled, always
+# (recommended)' (DC Only) (Scored)
+# =============================================================================
+- name: "18.3.5-'Extndd Prtctn for LDAP Auth(DCs only)'='Enabled:Enabled,always"
+  include_tasks: win_check.yml
+  vars:
+   title: "The LdapEnforceChannelBinding setting (18.3.5)"
+   check_against: "{{ LdapEnforceChannelBinding_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\NTDS\Parameters"
+     -name "LdapEnforceChannelBinding"|Select-Object
+     -ExpandProperty "LdapEnforceChannelBinding"
+   win_regedit_cmd:
+    path: "{{ services_reg }}NTDS\\Parameters"
+    name: "LdapEnforceChannelBinding"
+    data: "2"
+    type: dword
+  when: execute_18_3_5 == "YES" and (DomainR_out == "4" or DomainR_out == "5")
+
+
+# =============================================================================
+# 18.3.6 (L1) Ensure 'WDigest Authentication' is set to 'Disabled' (Scored)
+# =============================================================================
+- name: "18.3.6 (L1) Ensure 'WDigest Authentication' set to 'Disabled' (Scored)"
+  include_tasks: win_check.yml
+  vars:
+   title: "The UseLogonCredential setting (18.3.6) "
+   check_against: "{{ UseLogonCredential_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest" -name
+     "UseLogonCredential"|Select-Object -ExpandProperty "UseLogonCredential"
+   win_regedit_cmd:
+    path: HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest
+    name: "UseLogonCredential"
+    data: "0"
+    type: dword
+  when: execute_18_3_6 == "YES"
