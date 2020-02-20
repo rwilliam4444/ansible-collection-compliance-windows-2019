@@ -1,0 +1,2331 @@
+---
+# =============================================================================
+# tasks file for ansible-role-compliance-windows-windows-components-policy-2019
+# =============================================================================
+#
+#
+# ==================================================================
+# collect hostname and ip address information
+# ==================================================================
+- name: collect hostname
+  win_shell: >
+    $sysinfo=Get-WmiObject -Class win32_computersystem;
+    $server="{0}.{1}" -f $sysinfo.Name, $sysinfo.domain;
+    $server
+  register: FQDN_hostname
+  ignore_errors: true
+
+- name: set output
+  set_fact:
+   FQDN_hostname: "{{ FQDN_hostname.stdout_lines | join }}"
+
+- block:
+   - debug:
+      msg:
+       - "The FQDN hostname is.....{{ FQDN_hostname }}"
+
+- name: collect ip address
+  win_shell: >
+     (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -ne
+     $null -and $_.netadapter.status -ne "Disconnected"}).ipv4address.ipaddress
+  register: default_ipv4_address
+  ignore_errors: true
+
+- name: set output
+  set_fact:
+   default_ipv4_address: "{{ default_ipv4_address.stdout_lines }}"
+
+- block:
+   - debug:
+      msg:
+       - "The default_ipv4_address is.....{{ default_ipv4_address }}"
+
+
+# ==================================================================
+# Get O\S information
+# ==================================================================
+- name: "Get Operating Systerm version information"
+  win_shell: (get-WMIobject win32_operatingsystem).Name
+  register: Win_os_ver_out
+  ignore_errors: true
+
+- name: "set output variable"
+  set_fact:
+   Win_os_ver_out="{{ Win_os_ver_out.stdout_lines|list|join }}"
+
+- name: "check and ensure if the windows server is a 2019 server"
+  fail:
+   msg: "This server is NOT a windows 2019 server: {{ Win_os_ver_out }}"
+  when: approved_windows_ver not in Win_os_ver_out
+
+- block:
+   - debug:
+      msg:
+       - "This server IS a windows 2019 server: {{ Win_os_ver_out }}"
+  when: approved_windows_ver in Win_os_ver_out
+#
+#
+# ============================================================================
+# 18.9.4.1 (L2) Ensure 'Allow a Windows app to share application data between
+# users' is set to 'Disabled' (Scored)
+# ============================================================================
+- name: "18.9.4.1 (L2) 'Allw a Wndws app to shr app data btwn users'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowSharedLocalAppData setting (18.9.4.1)"
+   check_against: "{{ AllowSharedLocalAppData_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\CurrentVersion\AppModel\StateManager"
+     -name "AllowSharedLocalAppData"|Select-Object
+     -ExpandProperty "AllowSharedLocalAppData"
+   win_regedit_cmd:
+    path: "{{ curver_reg }}AppModel\\StateManager"
+    name: "AllowSharedLocalAppData"
+    data: "0"
+    type: dword
+  when: execute_18_9_4_1 == "YES"
+
+
+# ========================================================================
+# 18.9.6.1 (L1) Ensure 'Allow Microsoft accounts to be optional' is set to
+# 'Enabled' (Scored)
+# ========================================================================
+- name: "18.9.6.1 (L1) 'Allow Microsoft accnts to be optional' set to 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The MSAOptional setting (18.9.6.1)"
+   check_against: "{{ MSAOptional_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -name
+     "MSAOptional"|Select-Object -ExpandProperty "MSAOptional"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+    name: "MSAOptional"
+    data: "1"
+    type: dword
+  when: execute_18_9_6_1 == "YES"
+
+
+# ======================================================================
+# 18.9.8.1 (L1) Ensure 'Disallow Autoplay for non-volume devices' is set
+# to 'Enabled' (Scored)
+# ======================================================================
+- name: "18.9.8.1 (L1) 'Disallow Autoplay for non-volume devices'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The NoAutoplayfornonVolume setting (18.9.8.1)"
+   check_against: "{{ NoAutoplayfornonVolume_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\Explorer" -name
+     "NoAutoplayfornonVolume"|Select-Object
+     -ExpandProperty "NoAutoplayfornonVolume"
+   win_regedit_cmd:
+    path: HKLM:\Software\Policies\Microsoft\Windows\Explorer
+    name: "NoAutoplayfornonVolume"
+    data: "1"
+    type: dword
+  when: execute_18_9_8_1 == "YES"
+
+
+# =====================================================================
+# 18.9.8.2 (L1) Ensure 'Set the default behavior for AutoRun' is set to
+# 'Enabled: Do not execute any autorun commands' (Scored)
+# =====================================================================
+- name: "18.9.8.2 (L1) 'Set...AutoRun'='Enabled: Do not exct any autorun cmds'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The NoAutorun setting (18.9.8.2)"
+   check_against: "{{ NoAutorun_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" -name
+     "NoAutorun"|Select-Object -ExpandProperty "NoAutorun"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer
+    name: "NoAutorun"
+    data: "1"
+    type: dword
+  when: execute_18_9_8_2 == "YES"
+
+
+# ========================================================================
+# 18.9.8.3 (L1) Ensure 'Turn off Autoplay' is set to 'Enabled: All drives'
+# ========================================================================
+- name: "18.9.8.3 (L1) 'Turn off Autoplay' is set to 'Enabled: All drives'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The NoDriveTypeAutoRun setting (18.9.8.3)"
+   check_against: "{{ NoDriveTypeAutoRun_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"
+     -name "NoDriveTypeAutoRun"|Select-Object
+     -ExpandProperty "NoDriveTypeAutoRun"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer
+    name: "NoDriveTypeAutoRun"
+    data: "255"
+    type: dword
+  when: execute_18_9_8_3 == "YES"
+
+
+# ==========================================================================
+# 18.9.10.1.1 (L1) Ensure 'Use enhanced anti-spoofing when available' is set
+# to 'Enabled' (Scored)
+# ==========================================================================
+- name: "18.9.10.1.1 (L1) 'Use enhanced anti-spoofing when available'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The EnhancedAntiSpoofing setting (18.9.10.1.1)"
+   check_against: "{{ EnhancedAntiSpoofing_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Biometrics\FacialFeatures" -name
+     "EnhancedAntiSpoofing"|Select-Object -ExpandProperty "EnhancedAntiSpoofing"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Biometrics\FacialFeatures
+    name: "EnhancedAntiSpoofing"
+    data: "1"
+    type: dword
+  when: execute_18_9_10_1_1 == "YES"
+
+
+# =====================================================================
+# 18.9.12.1 (L2) Ensure 'Allow Use of Camera' is set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.12.1 (L2) Ensure 'Allow Use of Camera' is set to 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowCamera setting (18.9.12.1)"
+   check_against: "{{ AllowCamera_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Camera" -name
+     "AllowCamera"|Select-Object -ExpandProperty "AllowCamera"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Camera
+    name: "AllowCamera"
+    data: "0"
+    type: dword
+  when: execute_18_9_12_1 == "YES"
+
+
+# ======================================================================
+# 18.9.13.1 (L1) Ensure 'Turn off Microsoft consumer experiences' is set
+# to 'Enabled' (Scored)
+# ======================================================================
+- name: "18.9.13.1 (L1) 'Turn off Microsoft consumer experiences'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableWindowsConsumerFeatures setting (18.9.13.1)"
+   check_against: "{{ DisableWindowsConsumerFeatures_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent" -name
+     "DisableWindowsConsumerFeatures"|Select-Object
+     -ExpandProperty "DisableWindowsConsumerFeatures"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent
+    name: "DisableWindowsConsumerFeatures"
+    data: "1"
+    type: dword
+  when: execute_18_9_13_1 == "YES"
+
+
+# ============================================================================
+# 18.9.14.1 (L1) Ensure 'Require pin for pairing' is set to 'Enabled' (Scored)
+# ============================================================================
+- name: "18.9.14.1 (L1) Ensure 'Require pin for pairing' is set to 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The RequirePinForPairing setting (18.9.14.1)"
+   check_against: "{{ RequirePinForPairing_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Connect" -name
+     "RequirePinForPairing"|Select-Object -ExpandProperty "RequirePinForPairing"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\Connect
+    name: "RequirePinForPairing"
+    data: "1"
+    type: dword
+  when: execute_18_9_14_1 == "YES"
+
+
+# =========================================================================
+# 18.9.15.1 (L1) Ensure 'Do not display the password reveal button' is set
+# to 'Enabled' (Scored)
+# =========================================================================
+- name: "18.9.15.1 (L1) 'Do not display the password reveal button'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisablePasswordReveal setting (18.9.15.1)"
+   check_against: "{{ DisablePasswordReveal_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CredUI" -name
+     "DisablePasswordReveal"|Select-Object
+     -ExpandProperty "DisablePasswordReveal"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\CredUI
+    name: "DisablePasswordReveal"
+    data: "1"
+    type: dword
+  when: execute_18_9_15_1 == "YES"
+
+
+# ============================================================================
+# 18.9.15.2 (L1) Ensure 'Enumerate administrator accounts on elevation' is set
+# to 'Disabled' (Scored)
+# ============================================================================
+- name: "18.9.15.2 (L1) 'Enmrte administrator accnts on elevation'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The EnumerateAdministrators setting (18.9.15.2)"
+   check_against: "{{ EnumerateAdministrators_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\CredUI" -name
+     "EnumerateAdministrators"|Select-Object
+     -ExpandProperty "EnumerateAdministrators"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\CredUI
+    name: "EnumerateAdministrators"
+    data: "0"
+    type: dword
+  when: execute_18_9_15_2 == "YES"
+
+
+# =========================================================================
+# 18.9.16.1 (L1) Ensure 'Allow Telemetry' is set to 'Enabled: 0 - Security
+#  [Enterprise Only]' (Scored)
+# =========================================================================
+- name: "18.9.16.1 (L1) 'Allw Telemetry'='Enabled: 0-Security[Enterprise Only]'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowTelemetry setting (18.9.16.1)"
+   check_against: "{{ AllowTelemetry_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -name
+     "AllowTelemetry"|Select-Object -ExpandProperty "AllowTelemetry"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection
+    name: "AllowTelemetry"
+    data: "0"
+    type: dword
+  when: execute_18_9_16_1 == "YES"
+
+
+# ========================================================================
+# 18.9.16.2 (L2) Ensure 'Configure Authenticated Proxy usage for the
+# Connected User Experience and Telemetry service' is set to 'Enabled:
+# Disable Authenticated Proxy usage' (Scored)
+# ========================================================================
+- name: "18.9.16.2 (L2)'Configure Auth..... Disable Authenticated Proxy usage'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableEnterpriseAuthProxy setting (18.9.16.2)"
+   check_against: "{{ DisableEnterpriseAuthProxy_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection"
+     -name "DisableEnterpriseAuthProxy"|Select-Object
+     -ExpandProperty "DisableEnterpriseAuthProxy"
+   win_regedit_cmd:
+    path: HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection
+    name: "DisableEnterpriseAuthProxy"
+    data: "1"
+    type: dword
+  when: execute_18_9_16_2 == "YES"
+
+
+# =====================================================================
+# 18.9.16.3 (L1) Ensure 'Do not show feedback notifications' is set to
+# 'Enabled' (Scored)
+# =====================================================================
+- name: "18.9.16.3 (L1) 'Do not show feedback notifications' set to 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DoNotShowFeedbackNotifications setting (18.9.16.3)"
+   check_against: "{{ DoNotShowFeedbackNotifications_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\DataCollection" -name
+     "DoNotShowFeedbackNotifications"|Select-Object
+     -ExpandProperty "DoNotShowFeedbackNotifications"
+   win_regedit_cmd:
+    path: HKLM:\Software\Policies\Microsoft\Windows\DataCollection
+    name: "DoNotShowFeedbackNotifications"
+    data: "1"
+    type: dword
+  when: execute_18_9_16_3 == "YES"
+
+
+# =======================================================================
+# 18.9.16.4 (L1) Ensure 'Toggle user control over Insider builds' is set
+# to 'Disabled' (Scored)
+# =======================================================================
+- name: "18.9.16.4 (L1) 'Toggle user control over Insider builds' = 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowBuildPreview setting (18.9.16.4)"
+   check_against: "{{ AllowBuildPreview_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PreviewBuilds" -name
+     "AllowBuildPreview"|Select-Object -ExpandProperty "AllowBuildPreview"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\PreviewBuilds
+    name: "AllowBuildPreview"
+    data: "0"
+    type: dword
+  when: execute_18_9_16_4 == "YES"
+
+
+# =====================================================================
+# 18.9.26.1.1 (L1) Ensure 'Application: Control Event Log behavior when
+# the log file reaches its maximum size' is set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.26.1.1 (L1) 'App: Control...file reaches its max size'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The Retention setting (18.9.26.1.1)"
+   check_against: "{{ Retention_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Application" -name
+     "Retention"|Select-Object -ExpandProperty "Retention"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Application
+    name: "Retention"
+    data: "0"
+    type: string
+  when: execute_18_9_26_1_1 == "YES"
+
+
+# =============================================================================
+# 18.9.26.1.2 (L1) Ensure 'Application: Specify the maximum log file size (KB)'
+#  is set to 'Enabled: 32,768 or greater' (Scored)
+# =============================================================================
+- name: "18.9.26.1.2 (L1) 'Appl: max log file size(KB)'='Enbld:32,768 or grtr'"
+  include_tasks: win_check_greater_than_equal_to.yml
+  vars:
+   title: "The MaxSize setting (18.9.26.1.2)"
+   check_against: "{{ MaxSize_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Application" -name
+     "MaxSize"|Select-Object -ExpandProperty "MaxSize"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Application
+    name: "MaxSize"
+    data: "32768"
+    type: dword
+  when: execute_18_9_26_1_2 == "YES"
+
+
+# ==========================================================================
+# 18.9.26.2.1 (L1) Ensure 'Security: Control Event Log behavior when the log
+# file reaches its maximum size' is set to 'Disabled' (Scored)
+# ==========================================================================
+- name: "18.9.26.2.1 (L1) 'Sec: Cntrl...log file rches its max size'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The Retention setting (18.9.26.2.1)"
+   check_against: "{{ Retention2_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Security" -name
+     "Retention"|Select-Object -ExpandProperty "Retention"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Security
+    name: "Retention"
+    data: "0"
+    type: string
+  when: execute_18_9_26_2_1 == "YES"
+
+
+# ==========================================================================
+# 18.9.26.2.2 (L1) Ensure 'Security: Specify the maximum log file size (KB)'
+#  is set to 'Enabled: 196,608 or greater' (Scored)
+# ==========================================================================
+- name: "18.9.26.2.2 (L1)'Sec: Spcfy max log fle sze(KB)'='Enbd:196,608 or gtr'"
+  include_tasks: win_check_greater_than_equal_to.yml
+  vars:
+   title: "The MaxSize setting (18.9.26.2.2)"
+   check_against: "{{ MaxSize2_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Security" -name
+     "MaxSize"|Select-Object -ExpandProperty "MaxSize"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Security
+    name: "MaxSize"
+    data: "196608"
+    type: dword
+  when: execute_18_9_26_2_2 == "YES"
+
+
+# ============================================================================
+# 18.9.26.3.1 (L1) Ensure 'Setup: Control Event Log behavior when the log file
+# reaches its maximum size' is set to 'Disabled' (Scored)
+# ============================================================================
+- name: "18.9.26.3.1 (L1)'Setup:Cntrl...whn log fle rchs its max sz'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The Retention setting (18.9.26.3.1)"
+   check_against: "{{ Retention3_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Setup" -name
+     "Retention"|Select-Object -ExpandProperty "Retention"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Setup
+    name: "Retention"
+    data: "0"
+    type: string
+  when: execute_18_9_26_3_1 == "YES"
+
+
+# ===========================================================================
+# 18.9.26.3.2 (L1) Ensure 'Setup: Specify the maximum log file size (KB)' is
+# set to 'Enabled: 32,768 or greater' (Scored)
+# ===========================================================================
+- name: "18.9.26.3.2 (L1) maxlog file size (KB)=Enabled: 32,768 or greater"
+  include_tasks: win_check_greater_than_equal_to.yml
+  vars:
+   title: "The MaxSize setting (18.9.26.3.2)"
+   check_against: "{{ MaxSize3_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Setup" -name
+     "MaxSize"|Select-Object -ExpandProperty "MaxSize"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\Setup
+    name: "MaxSize"
+    data: "32768"
+    type: dword
+  when: execute_18_9_26_3_2 == "YES"
+
+
+# =============================================================================
+# 18.9.26.4.1 (L1) Ensure 'System: Control Event Log behavior when the log file
+# reaches its maximum size' is set to 'Disabled' (Scored)
+# =============================================================================
+- name: "18.9.26.4.1 (L1) Evnt Log bhvr whn the lg fl rchs its max sze'='Dsbld'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The Retention setting (18.9.26.4.1)"
+   check_against: "{{ Retention4_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\System" -name
+     "Retention"|Select-Object -ExpandProperty "Retention"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\System
+    name: "Retention"
+    data: "0"
+    type: string
+  when: execute_18_9_26_4_1 == "YES"
+
+
+# ===========================================================================
+# 18.9.26.4.2 (L1) Ensure 'System: Specify the maximum log file size (KB)' is
+# set to 'Enabled: 32,768 or greater' (Scored)
+# ===========================================================================
+- name: "18.9.26.4.2 (L1) max log file size (KB)=Enabled: 32,768 or greater"
+  include_tasks: win_check_greater_than_equal_to.yml
+  vars:
+   title: "The MaxSize setting (18.9.26.4.2)"
+   check_against: "{{ MaxSize4_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\System" -name
+     "MaxSize"|Select-Object -ExpandProperty "MaxSize"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\EventLog\System
+    name: "MaxSize"
+    data: "32768"
+    type: dword
+  when: execute_18_9_26_4_2 == "YES"
+
+
+# ===========================================================================
+# 18.9.30.2 (L1) Ensure 'Turn off Data Execution Prevention for Explorer' is
+# set to 'Disabled' (Scored)
+# ===========================================================================
+- name: "18.9.30.2 (L1) 'Turn off Data Exctn Prvntn for Explorer'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The NoDataExecutionPrevention setting (18.9.30.2)"
+   check_against: "{{ NoDataExecutionPrevention_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer" -name
+     "NoDataExecutionPrevention"|Select-Object
+     -ExpandProperty "NoDataExecutionPrevention"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer
+    name: "NoDataExecutionPrevention"
+    data: "0"
+    type: dword
+  when: execute_18_9_30_2 == "YES"
+
+
+# ======================================================================
+# 18.9.30.3 (L1) Ensure 'Turn off heap termination on corruption' is set
+# to 'Disabled' (Scored)
+# ======================================================================
+- name: "18.9.30.3 (L1) 'Turn off heap termination on corruption' = 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The NoHeapTerminationOnCorruption setting (18.9.30.3)"
+   check_against: "{{ NoHeapTerminationOnCorruption_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer" -name
+     "NoHeapTerminationOnCorruption"|Select-Object
+     -ExpandProperty "NoHeapTerminationOnCorruption"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer
+    name: "NoHeapTerminationOnCorruption"
+    data: "0"
+    type: dword
+  when: execute_18_9_30_3 == "YES"
+
+
+# =========================================================================
+# 18.9.30.4 (L1) Ensure 'Turn off shell protocol protected mode' is set to
+#  'Disabled' (Scored)
+# =========================================================================
+- name: "18.9.30.4 (L1) 'Turn off shell protocol protected mode' = 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "PreXPSP2ShellProtocolBehavior setting (18.9.30.4)"
+   check_against: "{{ PreXPSP2ShellProtocolBehavior_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" -name
+     "PreXPSP2ShellProtocolBehavior"|Select-Object
+     -ExpandProperty "PreXPSP2ShellProtocolBehavior"
+   win_regedit_cmd:
+    path: HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer
+    name: "PreXPSP2ShellProtocolBehavior"
+    data: "0"
+    type: dword
+  when: execute_18_9_30_4 == "YES"
+
+
+# =====================================================================
+# 18.9.39.2 (L2) Ensure 'Turn off location' is set to 'Enabled' (Scored)
+# =====================================================================
+- name: "18.9.39.2 (L2) Ensure 'Turn off location' is set to 'Enabled' (Scored)"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableLocation setting (18.9.39.2)"
+   check_against: "{{ DisableLocation_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\LocationAndSensors" -name
+     "DisableLocation"|Select-Object -ExpandProperty "DisableLocation"
+   win_regedit_cmd:
+    path: HKLM:\Software\Policies\Microsoft\Windows\LocationAndSensors
+    name: "DisableLocation"
+    data: "1"
+    type: dword
+  when: execute_18_9_39_2 == "YES"
+
+
+# =============================================================================
+# 18.9.43.1 (L2) Ensure 'Allow Message Service Cloud Sync' is set to 'Disabled'
+# ============================================================================
+- name: "18.9.43.1 (L2) Ensure 'Allow Message Service Cloud Sync' = 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowMessageSync setting (18.9.43.1)"
+   check_against: "{{ AllowMessageSync_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Messaging" -name
+     "AllowMessageSync"|Select-Object -ExpandProperty "AllowMessageSync"
+   win_regedit_cmd:
+    path: HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Messaging
+    name: "AllowMessageSync"
+    data: "0"
+    type: dword
+  when: execute_18_9_43_1 == "YES"
+
+
+# =============================================================================
+# 18.9.44.1 (L1)'Block all consumer Microsoft acct usr authentication'='Enabled'
+# =============================================================================
+- name: "18.9.44.1 (L1)'Block all consumer Microsoft acct usr auth'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableUserAuth setting (18.9.44.1)"
+   check_against: "{{ DisableUserAuth_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\MicrosoftAccount" -name
+     "DisableUserAuth"|Select-Object -ExpandProperty "DisableUserAuth"
+   win_regedit_cmd:
+    path: HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\MicrosoftAccount
+    name: "DisableUserAuth"
+    data: "1"
+    type: dword
+  when: execute_18_9_44_1 == "YES"
+
+
+# =============================================================================
+# 18.9.52.1 (L1) Ensure 'Prevent the usage of OneDrive for file storage' is set
+# to 'Enabled' (Scored)
+# =============================================================================
+- name: "18.9.52.1 (L1) 'Prvnt the usge of OneDrive for file storage'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableFileSyncNGSC setting (18.9.52.1)"
+   check_against: "{{ DisableFileSyncNGSC_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive" -name
+     "DisableFileSyncNGSC"|Select-Object -ExpandProperty "DisableFileSyncNGSC"
+   win_regedit_cmd:
+    path: HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive
+    name: "DisableFileSyncNGSC"
+    data: "1"
+    type: dword
+  when: execute_18_9_52_1 == "YES"
+
+
+# =======================================================================
+# 18.9.59.2.2 (L1) Ensure 'Do not allow passwords to be saved' is set to
+# 'Enabled' (Scored)
+# =======================================================================
+- name: "18.9.59.2.2 (L1) 'Do not allow passwords to be saved' = 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisablePasswordSaving setting (18.9.59.2.2)"
+   check_against: "{{ DisablePasswordSaving_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "DisablePasswordSaving"|Select-Object
+     -ExpandProperty "DisablePasswordSaving"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "DisablePasswordSaving"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_2_2 == "YES"
+
+
+# =============================================================================
+# 18.9.59.3.2.1 (L2) Ensure 'Restrict Remote Desktop Services users to a single
+# Remote Desktop Services session' is set to 'Enabled' (Scored)
+# =============================================================================
+- name: "18.9.59.3.2.1 (L2) Remote Desktop Services session'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The fSingleSessionPerUser setting (18.9.59.3.2.1)"
+   check_against: "{{ fSingleSessionPerUser_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "fSingleSessionPerUser"|Select-Object
+     -ExpandProperty "fSingleSessionPerUser"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "fSingleSessionPerUser"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_3_2_1 == "YES"
+
+
+# ============================================================================
+# 18.9.59.3.3.1 (L2) Ensure 'Do not allow COM port redirection' set to 'Enabled'
+# ============================================================================
+- name: "18.9.59.3.3.1 (L2) 'Do not allow COM port redirection'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The fDisableCcm setting (18.9.59.3.3.1)"
+   check_against: "{{ fDisableCcm_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "fDisableCcm"|Select-Object -ExpandProperty "fDisableCcm"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "fDisableCcm"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_3_3_1 == "YES"
+
+
+# =============================================================================
+# 18.9.59.3.3.2 (L1) Ensure 'Do not allow drive redirection' is set to 'Enabled'
+# =============================================================================
+- name: "18.9.59.3.3.2 (L1) Ensure 'Do not allow drive redirection' = 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The fDisableCdm setting (18.9.59.3.3.2)"
+   check_against: "{{ fDisableCdm_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "fDisableCdm"|Select-Object -ExpandProperty "fDisableCdm"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "fDisableCdm"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_3_3_2 == "YES"
+
+
+# =============================================================================
+# 18.9.59.3.3.3 (L2) Ensure 'Do not allow LPT port redirection' set to 'Enabled'
+# =============================================================================
+- name: "18.9.59.3.3.3 (L2) 'Do not allow LPT port redirection'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The fDisableLPT setting (18.9.59.3.3.3)"
+   check_against: "{{ fDisableLPT_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "fDisableLPT"|Select-Object -ExpandProperty "fDisableLPT"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "fDisableLPT"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_3_3_3 == "YES"
+
+
+# ======================================================================
+# 18.9.59.3.3.4 (L2) Ensure 'Do not allow supported Plug and Play device
+# redirection' is set to 'Enabled' (Scored)
+# ======================================================================
+- name: "18.9.59.3.3.4 (L2) 'Do nt allow spprtd PnP dvce redirection'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The fDisablePNPRedir setting (18.9.59.3.3.4)"
+   check_against: "{{ fDisablePNPRedir_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "fDisablePNPRedir"|Select-Object -ExpandProperty "fDisablePNPRedir"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "fDisablePNPRedir"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_3_3_4 == "YES"
+
+
+# =====================================================================
+# 18.9.59.3.9.1 (L1) Ensure 'Always prompt for password upon connection'
+# is set to 'Enabled' (Scored)
+# =====================================================================
+- name: "18.9.59.3.9.1 (L1) 'Always prompt for pw upon connection'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The fPromptForPassword setting (18.9.59.3.9.1)"
+   check_against: "{{ fPromptForPassword_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "fPromptForPassword"|Select-Object -ExpandProperty "fPromptForPassword"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "fPromptForPassword"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_3_9_1 == "YES"
+
+
+# =====================================================================
+# 18.9.59.3.9.2 (L1) Ensure 'Require secure RPC communication' is set
+# to 'Enabled' (Scored)
+# =====================================================================
+- name: "18.9.59.3.9.2 (L1) 'Require secure RPC communication'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The fEncryptRPCTraffic setting (18.9.59.3.9.2)"
+   check_against: "{{ fEncryptRPCTraffic_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "fEncryptRPCTraffic"|Select-Object -ExpandProperty "fEncryptRPCTraffic"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "fEncryptRPCTraffic"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_3_9_2 == "YES"
+
+
+# =====================================================================
+# 18.9.59.3.9.3 (L1) Ensure 'Require use of specific security layer for
+# remote (RDP) connections' is set to 'Enabled: SSL' (Scored)
+# =====================================================================
+- name: "18.9.59.3.9.3 'Rqr use spcfc sec layer-RDP connections'='Enabled: SSL'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The SecurityLayer setting (18.9.59.3.9.3)"
+   check_against: "{{ SecurityLayer_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "SecurityLayer"|Select-Object -ExpandProperty "SecurityLayer"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "SecurityLayer"
+    data: "2"
+    type: dword
+  when: execute_18_9_59_3_9_3 == "YES"
+
+
+# =====================================================================
+# 18.9.59.3.9.4 (L1) Ensure 'Require user authentication for remote
+# connections by using Network Level Authentication' is set to 'Enabled'
+# (Scored)
+# =====================================================================
+- name: "18.9.59.3.9.4 Rqr usr auth rmte cnnctns usng Ntwrk Lvl Auth='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The UserAuthentication setting (18.9.59.3.9.4)"
+   check_against: "{{ UserAuthentication_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "UserAuthentication"|Select-Object -ExpandProperty "UserAuthentication"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "UserAuthentication"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_3_9_4 == "YES"
+
+
+# =====================================================================
+# 18.9.59.3.9.5 (L1) Ensure 'Set client connection encryption level' is
+# set to 'Enabled: High Level' (Scored)
+# =====================================================================
+- name: "18.9.59.3.9.5 (L1) 'St clnt cnnctn encryptn lvl'='Enabled: High Level'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The MinEncryptionLevel setting (18.9.59.3.9.5)"
+   check_against: "{{ MinEncryptionLevel_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "MinEncryptionLevel"|Select-Object -ExpandProperty "MinEncryptionLevel"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "MinEncryptionLevel"
+    data: "3"
+    type: dword
+  when: execute_18_9_59_3_9_5 == "YES"
+
+
+# ===========================================================================
+# 18.9.59.3.10.1 (L2) Ensure 'Set time limit for active but idle Remote
+# Desktop Services sessions' is set to 'Enabled: 15 minutes or less' (Scored)
+# ===========================================================================
+- name: "18.9.59.3.10.1 (L2) 'RDS sessions'='Enabled: =<15 minutes'"
+  include_tasks: win_check_less_than_equal_to_but_not_zero.yml
+  vars:
+   title: "The MaxIdleTime setting (18.9.59.3.10.1)"
+   check_against: "{{ MaxIdleTime_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "MaxIdleTime"|Select-Object -ExpandProperty "MaxIdleTime"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "MaxIdleTime"
+    data: "900000"
+    type: dword
+  when: execute_18_9_59_3_10_1 == "YES"
+
+
+# =====================================================================
+# 18.9.59.3.10.2 (L2) Ensure 'Set time limit for disconnected sessions'
+#  is set to 'Enabled: 1 minute' (Scored)
+# =====================================================================
+- name: "18.9.59.3.10.2 (L2)'Set time limit fr dscnnctd sssns'='Enabled: 1 min'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The MaxDisconnectionTime setting (18.9.59.3.10.2)"
+   check_against: "{{ MaxDisconnectionTime_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "MaxDisconnectionTime"|Select-Object -ExpandProperty "MaxDisconnectionTime"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "MaxDisconnectionTime"
+    data: "60000"
+    type: dword
+  when: execute_18_9_59_3_10_2 == "YES"
+
+
+# =====================================================================
+# 18.9.59.3.11.1 (L1) Ensure 'Do not delete temp folders upon exit' is
+# set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.59.3.11.1 (L1) 'Do not delete temp folders upon exit'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DeleteTempDirsOnExit setting (18.9.59.3.11.1)"
+   check_against: "{{ DeleteTempDirsOnExit_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "DeleteTempDirsOnExit"|Select-Object -ExpandProperty "DeleteTempDirsOnExit"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "DeleteTempDirsOnExit"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_3_11_1 == "YES"
+
+
+# =====================================================================
+# 18.9.59.3.11.2 (L1) Ensure 'Do not use temporary folders per session'
+# is set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.59.3.11.2 (L1) 'Do not use tmprry folders per session'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The PerSessionTempDir setting (18.9.59.3.11.2)"
+   check_against: "{{ PerSessionTempDir_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -name
+     "PerSessionTempDir"|Select-Object -ExpandProperty "PerSessionTempDir"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+    name: "PerSessionTempDir"
+    data: "1"
+    type: dword
+  when: execute_18_9_59_3_11_2 == "YES"
+
+
+# =====================================================================
+# 18.9.60.1 (L1) Ensure 'Prevent downloading of enclosures' is set to
+# 'Enabled' (Scored)
+# =====================================================================
+- name: "18.9.60.1 (L1) 'Prevent downloading of enclosures' = 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableEnclosureDownload setting (18.9.60.1)"
+   check_against: "{{ DisableEnclosureDownload_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Internet Explorer\Feeds" -name
+     "DisableEnclosureDownload"|Select-Object
+     -ExpandProperty "DisableEnclosureDownload"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Internet Explorer\Feeds'
+    name: "DisableEnclosureDownload"
+    data: "1"
+    type: dword
+  when: execute_18_9_60_1 == "YES"
+
+
+# =====================================================================
+# 18.9.61.2 (L2) Ensure 'Allow Cloud Search' is set to 'Enabled: Disable
+# Cloud Search' (Scored)
+# =====================================================================
+- name: "18.9.61.2 (L2) 'Allw Cloud Srch' = 'Enabled: Disable Cloud Search'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowCloudSearch setting (18.9.61.2)"
+   check_against: "{{ AllowCloudSearch_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -name
+     "AllowCloudSearch"|Select-Object -ExpandProperty "AllowCloudSearch"
+   win_regedit_cmd:
+    path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search'
+    name: "AllowCloudSearch"
+    data: "1"
+    type: dword
+  when: execute_18_9_61_2 == "YES"
+
+
+# =====================================================================
+# 18.9.61.3 (L1) Ensure 'Allow indexing of encrypted files' is set to
+# 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.61.3 (L1) 'Allow indexing of encrypted files'='Disabled' (Scored)"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowIndexingEncryptedStoresOrItems setting (18.9.61.3)"
+   check_against: "{{ AllowIndexingEncryptedStoresOrItems_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -name
+     "AllowIndexingEncryptedStoresOrItems"|Select-Object
+     -ExpandProperty "AllowIndexingEncryptedStoresOrItems"
+   win_regedit_cmd:
+    path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search'
+    name: "AllowIndexingEncryptedStoresOrItems"
+    data: "0"
+    type: dword
+  when: execute_18_9_61_3 == "YES"
+
+
+# =====================================================================
+# 18.9.66.1 (L2) Ensure 'Turn off KMS Client Online AVS Validation' is
+# set to 'Enabled' (Scored)
+# =====================================================================
+- name: "18.9.66.1 (L2) 'Turn off KMS Client Online AVS Validation'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The NoGenTicket setting (18.9.66.1)"
+   check_against: "{{ NoGenTicket_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     NT\CurrentVersion\Software Protection Platform"
+     -name "NoGenTicket"|Select-Object -ExpandProperty "NoGenTicket"
+   win_regedit_cmd:
+    path: "{{ NTcrvr_reg }}Software Protection Platform"
+    name: "NoGenTicket"
+    data: "1"
+    type: dword
+  when: execute_18_9_66_1 == "YES"
+
+
+# =====================================================================
+# 18.9.77.3.1 (L1) Ensure 'Configure local setting override for reporting to
+# Microsoft MAPS' is set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.77.3.1 'Cnfig lcl sttng ovrrde for rprting to MS MAPS'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The LocalSettingOverrideSpynetReporting setting (18.9.77.3.1)"
+   check_against: "{{ LocalSettingOverrideSpynetReporting_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows Defender\Spynet"
+     -name "LocalSettingOverrideSpynetReporting"|Select-Object
+     -ExpandProperty "LocalSettingOverrideSpynetReporting"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows Defender\Spynet'
+    name: "LocalSettingOverrideSpynetReporting"
+    data: "0"
+    type: dword
+  when: execute_18_9_77_3_1 == "YES"
+
+
+# =====================================================================
+# 18.9.77.3.2 (L2) Ensure 'Join Microsoft MAPS' is set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.77.3.2 (L2) 'Join Microsoft MAPS' is set to 'Disabled' (Scored)"
+  include_tasks: win_check.yml
+  vars:
+   title: "The SpyNetReporting setting (18.9.77.3.2)"
+   check_against: "{{ SpyNetReporting_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows Defender\Spynet" -name
+     "SpyNetReporting"|Select-Object -ExpandProperty "SpyNetReporting"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows Defender\Spynet'
+    name: "SpyNetReporting"
+    data: "0"
+    type: dword
+  when: execute_18_9_77_3_2 == "YES"
+
+
+# =========================================================================
+# 18.9.77.7.1 (L1) Ensure 'Turn on behavior monitoring' is set to 'Enabled'
+# =========================================================================
+- name: "18.9.77.7.1 (L1) Ensure 'Turn on behavior monitoring' = 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableBehaviorMonitoring setting (18.9.77.7.1)"
+   check_against: "{{ DisableBehaviorMonitoring_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows Defender\Real-Time Protection"
+     -name "DisableBehaviorMonitoring"|Select-Object
+     -ExpandProperty "DisableBehaviorMonitoring"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Real-Time Protection"
+    name: "DisableBehaviorMonitoring"
+    data: "0"
+    type: dword
+  when: execute_18_9_77_7_1 == "YES"
+
+
+# =====================================================================
+# 18.9.77.9.1 (L2) 'Configure Watson events' is set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.77.9.1 (L2) 'Configure Watson events' set to 'Disabled' (Scored)"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableGenericReports setting (18.9.77.9.1)"
+   check_against: "{{ DisableGenericReports_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Microsoft Defender\Reporting" -name
+     "DisableGenericReports"|Select-Object
+     -ExpandProperty "DisableGenericReports"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Microsoft Defender\Reporting'
+    name: "DisableGenericReports"
+    data: "1"
+    type: dword
+  when: execute_18_9_77_9_1 == "YES"
+
+
+# =====================================================================
+# 18.9.77.10.1 (L1) Ensure 'Scan removable drives' is set to 'Enabled'
+# =====================================================================
+- name: "18.9.77.10.1 (L1) Ensure 'Scan removable drives' is set to 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableRemovableDriveScanning setting (18.9.77.10.1)"
+   check_against: "{{ DisableRemovableDriveScanning_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows Defender\Scan" -name
+     "DisableRemovableDriveScanning"|Select-Object
+     -ExpandProperty "DisableRemovableDriveScanning"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows Defender\Scan'
+    name: "DisableRemovableDriveScanning"
+    data: "0"
+    type: dword
+  when: execute_18_9_77_10_1 == "YES"
+
+
+# =====================================================================
+# 18.9.77.10.2 (L1) Ensure 'Turn on e-mail scanning' is set to 'Enabled'
+# =====================================================================
+- name: "18.9.77.10.2 (L1) 'Turn on e-mail scanning' is set to 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableEmailScanning setting (18.9.77.10.2)"
+   check_against: "{{ DisableEmailScanning_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows Defender\Scan" -name
+     "DisableEmailScanning"|Select-Object
+     -ExpandProperty "DisableEmailScanning"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows Defender\Scan'
+    name: "DisableEmailScanning"
+    data: "0"
+    type: dword
+  when: execute_18_9_77_10_2 == "YES"
+
+
+# =======================================================================
+# 18.9.77.13.1.1 (L1) 'Configure Attack Surface Reduction rules'='Enabled'
+# =======================================================================
+- name: "18.9.77.13.1.1 (L1)'Config Attack Surface Reduction rules'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The ExploitGuard_ASR_Rules setting (18.9.77.13.1.1)"
+   check_against: "{{ ExploitGuard_ASR_Rules_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR" -name
+     "ExploitGuard_ASR_Rules"|Select-Object
+     -ExpandProperty "ExploitGuard_ASR_Rules"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR"
+    name: "ExploitGuard_ASR_Rules"
+    data: "1"
+    type: dword
+  when: execute_18_9_77_13_1_1 == "YES"
+
+
+# =======================================================================
+# 18.9.77.13.1.2 (L1) Ensure 'Configure Attack Surface Reduction rules: Set
+# the state for each ASR rule' is 'configured' (Scored)
+# =======================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The 26190899-1602-49e8-8b27-eb1d0a1ce869 setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "26190899-1602-49e8-8b27-eb1d0a1ce869"|Select-Object
+     -ExpandProperty "26190899-1602-49e8-8b27-eb1d0a1ce869"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "26190899-1602-49e8-8b27-eb1d0a1ce869"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+# =========================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The 3b576869-a4ec-4529-8536-b80a7769e899 setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "3b576869-a4ec-4529-8536-b80a7769e899"|Select-Object
+     -ExpandProperty "3b576869-a4ec-4529-8536-b80a7769e899"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "3b576869-a4ec-4529-8536-b80a7769e899"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+# =========================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The 5beb7efe-fd9a-4556-801d-275e5ffc04cc setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "5beb7efe-fd9a-4556-801d-275e5ffc04cc"|Select-Object
+     -ExpandProperty "5beb7efe-fd9a-4556-801d-275e5ffc04cc"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "5beb7efe-fd9a-4556-801d-275e5ffc04cc"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+# =========================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The 75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84 setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84"|Select-Object
+     -ExpandProperty "75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+# =========================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The 7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c"|Select-Object
+     -ExpandProperty "7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+# =========================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The 92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b"|Select-Object
+     -ExpandProperty "92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+# =========================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The 9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2 setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2"|Select-Object
+     -ExpandProperty "9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+# =========================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4 setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4"|Select-Object
+     -ExpandProperty "b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+# =========================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The be9ba2d9-53ea-4cdc-84e5-9b1eeee46550 setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "be9ba2d9-53ea-4cdc-84e5-9b1eeee46550"|Select-Object
+     -ExpandProperty "be9ba2d9-53ea-4cdc-84e5-9b1eeee46550"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "be9ba2d9-53ea-4cdc-84e5-9b1eeee46550"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+# =========================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The d3e037e1-3eb8-44c8-a917-57927947596d setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "d3e037e1-3eb8-44c8-a917-57927947596d"|Select-Object
+     -ExpandProperty "d3e037e1-3eb8-44c8-a917-57927947596d"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "d3e037e1-3eb8-44c8-a917-57927947596d"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+# =========================================================================
+- name: "18.9.77.13.1.2 'Config...Set the state for each ASR rule'='configured'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The d4f940ab-401b-4efc-aadc-ad5f3c50688a setting (18.9.77.13.1.2)"
+   check_against: "{{ attack_surface_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\ASR\Rules" -name
+     "d4f940ab-401b-4efc-aadc-ad5f3c50688a"|Select-Object
+     -ExpandProperty "d4f940ab-401b-4efc-aadc-ad5f3c50688a"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\ASR\\rules"
+    name: "d4f940ab-401b-4efc-aadc-ad5f3c50688a"
+    data: "1"
+    type: string
+  when: execute_18_9_77_13_1_2 == "YES"
+
+
+# =======================================================================
+# 18.9.77.13.3.1 (L1) Ensure 'Prevent users and apps from accessing
+# dangerous websites' is set to 'Enabled: Block' (Scored)
+# =======================================================================
+- name: "18.9.77.13.3.1 'Prevent usrs & apps from....websites'='Enabled: Block'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The EnableNetworkProtection setting (18.9.77.13.3.1)"
+   check_against: "{{ EnableNetworkProtection_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows
+     Defender\Windows Defender Exploit Guard\Network Protection" -name
+     "EnableNetworkProtection"|Select-Object
+     -ExpandProperty "EnableNetworkProtection"
+   win_regedit_cmd:
+    path: "{{ win_def_reg }}Windows Defender Exploit Guard\\Network Protection"
+    name: "EnableNetworkProtection"
+    data: "1"
+    type: dword
+  when: execute_18_9_77_13_3_1 == "YES"
+
+
+# =======================================================================
+# 18.9.77.14 (L1) Ensure 'Configure detection for potentially unwanted
+# applications' is set to 'Enabled: Block' (Scored)
+# =======================================================================
+- name: "18.9.77.14 'Config detection for unwanted apps'='Enabled: Block'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The PUAProtection setting (18.9.77.14)"
+   check_against: "{{ PUAProtection_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender" -name
+     "PUAProtection"|Select-Object
+     -ExpandProperty "PUAProtection"
+   win_regedit_cmd:
+    path: 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender'
+    name: "PUAProtection"
+    data: "1"
+    type: dword
+  when: execute_18_9_77_14 == "YES"
+
+
+# =======================================================================
+# 18.9.77.15 (L1) Ensure 'Turn off Windows Defender AntiVirus' is set to
+# 'Disabled'
+# =======================================================================
+- name: "18.9.77.15 (L1) 'Turn off Windows Defender AntiVirus'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableAntiSpyware setting (18.9.77.15)"
+   check_against: "{{ DisableAntiSpyware_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender" -name
+     "DisableAntiSpyware"|Select-Object
+     -ExpandProperty "DisableAntiSpyware"
+   win_regedit_cmd:
+    path: 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender'
+    name: "DisableAntiSpyware"
+    data: "0"
+    type: dword
+  when: execute_18_9_77_15 == "YES"
+
+
+# =======================================================================
+# 18.9.80.1.1 (L1) Ensure 'Configure Windows Defender SmartScreen' is
+# set to 'Enabled: Warn and prevent bypass' (Scored)
+# =======================================================================
+- name: "18.9.80.1.1 'Config...SmartScreen'='Enabled: Warn and prevent bypass'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The EnableSmartScreen setting (18.9.80.1.1)"
+   check_against: "{{ EnableSmartScreen_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System" -name
+     "EnableSmartScreen"|Select-Object
+     -ExpandProperty "EnableSmartScreen"
+   win_regedit_cmd:
+    path: 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System'
+    name: "EnableSmartScreen"
+    data: "1"
+    type: dword
+  when: execute_18_9_80_1_1 == "YES"
+
+# =======================================================================
+- name: "18.9.80.1.1 'Config...SmartScreen'='Enabled: Warn and prevent bypass'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The ShellSmartScreenLevel setting (18.9.80.1.1)"
+   check_against: "{{ ShellSmartScreenLevel_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System" -name
+     "ShellSmartScreenLevel"|Select-Object
+     -ExpandProperty "ShellSmartScreenLevel"
+   win_regedit_cmd:
+    path: 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System'
+    name: "ShellSmartScreenLevel"
+    data: "Block"
+    type: string
+  when: execute_18_9_80_1_1 == "YES"
+
+
+# =====================================================================
+# 18.9.84.1 (L2) Ensure 'Allow suggested apps in Windows Ink Workspace'
+#  is set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.84.1 (L2) 'Allow sggstd apps in Windows Ink Workspace'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowSuggestedAppsInWindowsInkWorkspace setting (18.9.84.1)"
+   check_against: "{{ AllowSuggestedAppsInWindowsInkWorkspace_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\WindowsInkWorkspace" -name
+     "AllowSuggestedAppsInWindowsInkWorkspace"|Select-Object
+     -ExpandProperty "AllowSuggestedAppsInWindowsInkWorkspace"
+   win_regedit_cmd:
+    path: 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsInkWorkspace'
+    name: "AllowSuggestedAppsInWindowsInkWorkspace"
+    data: "0"
+    type: dword
+  when: execute_18_9_84_1 == "YES"
+
+
+# =====================================================================
+# 18.9.84.2 (L1) Ensure 'Allow Windows Ink Workspace' is set to 'Enabled:
+# On, but disallow access above lock' OR 'Disabled' but not 'Enabled: On'
+# (Scored)
+# =====================================================================
+- name: "18.9.84.2 (L1) Ensure 'Allow Windows....... 'Disabled'='Enabled: On'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowWindowsInkWorkspace setting (18.9.84.2)"
+   check_against: "{{ AllowWindowsInkWorkspace_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\WindowsInkWorkspace" -name
+     "AllowWindowsInkWorkspace"|Select-Object
+     -ExpandProperty "AllowWindowsInkWorkspace"
+   win_regedit_cmd:
+    path: 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsInkWorkspace'
+    name: "AllowWindowsInkWorkspace"
+    data: "1"
+    type: dword
+  when: execute_18_9_84_2 == "YES"
+
+
+# =====================================================================
+# 18.9.85.1 (L1) Ensure 'Allow user control over installs' = 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.85.1 (L1) Ensure 'Allow user control over installs'= 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The EnableUserControl setting (18.9.85.1)"
+   check_against: "{{ EnableUserControl_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -name
+     "EnableUserControl"|Select-Object -ExpandProperty "EnableUserControl"
+   win_regedit_cmd:
+    path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer'
+    name: "EnableUserControl"
+    data: "0"
+    type: dword
+  when: execute_18_9_85_1 == "YES"
+
+
+# =====================================================================
+# 18.9.85.2 (L1) Ensure 'Always install with elevated privileges' is set
+#  to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.85.2 (L1) 'Always install with elevated privileges'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AlwaysInstallElevated setting (18.9.85.2)"
+   check_against: "{{ AlwaysInstallElevated_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\Installer" -name
+     "AlwaysInstallElevated"|Select-Object
+     -ExpandProperty "AlwaysInstallElevated"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\Installer'
+    name: "AlwaysInstallElevated"
+    data: "0"
+    type: dword
+  when: execute_18_9_85_2 == "YES"
+
+
+# =====================================================================
+# 18.9.85.3 (L2) Ensure 'Prevent Internet Explorer security prompt for
+# Windows Installer scripts' is set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.85.3 (L2) 'Prevent...for Windows Installer scripts'=Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The SafeForScripting setting (18.9.85.3)"
+   check_against: "{{ SafeForScripting_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -name
+     "SafeForScripting"|Select-Object -ExpandProperty "SafeForScripting"
+   win_regedit_cmd:
+    path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer'
+    name: "SafeForScripting"
+    data: "0"
+    type: dword
+  when: execute_18_9_85_3 == "YES"
+
+
+# =====================================================================
+# 18.9.86.1 (L1) Ensure 'Sign-in last interactive user automatically
+# after a system-initiated restart' is set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.86.1 (L1) 'Sign-in..after a system-initiated restart'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableAutomaticRestartSignOn setting (18.9.86.1)"
+   check_against: "{{ DisableAutomaticRestartSignOn_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -name
+     "DisableAutomaticRestartSignOn"|Select-Object
+     -ExpandProperty "DisableAutomaticRestartSignOn"
+   win_regedit_cmd:
+    path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+    name: "DisableAutomaticRestartSignOn"
+    data: "1"
+    type: dword
+  when: execute_18_9_86_1 == "YES"
+
+
+# =====================================================================
+# 18.9.95.1 (L1) Ensure 'Turn on PowerShell Script Block Logging' is
+# set to 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.95.1 (L1) 'Turn on PowerShell Script Block Logging'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The EnableScriptBlockLogging setting (18.9.95.1)"
+   check_against: "{{ EnableScriptBlockLogging_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"
+     -name "EnableScriptBlockLogging"|Select-Object
+     -ExpandProperty "EnableScriptBlockLogging"
+   win_regedit_cmd:
+    path: "{{ pwshell_reg }}ScriptBlockLogging"
+    name: "EnableScriptBlockLogging"
+    data: "1"
+    type: dword
+  when: execute_18_9_95_1 == "YES"
+
+
+# =====================================================================
+# 18.9.95.2 (L1) Ensure 'Turn on PowerShell Transcription' is set to
+# 'Disabled' (Scored)
+# =====================================================================
+- name: "18.9.95.2 (L1) 'Turn on PowerShell Transcription' = 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The EnableTranscripting setting (18.9.95.2)"
+   check_against: "{{ EnableTranscripting_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription" -name
+     "EnableTranscripting"|Select-Object -ExpandProperty "EnableTranscripting"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\PowerShell\Transcription'
+    name: "EnableTranscripting"
+    data: "0"
+    type: dword
+  when: execute_18_9_95_2 == "YES"
+
+
+# =========================================================================
+# 18.9.97.1.1 (L1) Ensure 'Allow Basic authentication' is set to 'Disabled'
+# =========================================================================
+- name: "18.9.97.1.1 (L1) Ensure 'Allow Basic authentication' set to 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowBasic setting (18.9.97.1.1)"
+   check_against: "{{ AllowBasic_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WinRM\Client" -name
+     "AllowBasic"|Select-Object -ExpandProperty "AllowBasic"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WinRM\Client'
+    name: "AllowBasic"
+    data: "0"
+    type: dword
+  when: execute_18_9_97_1_1 == "YES"
+
+
+# ========================================================================
+# 18.9.97.1.2 (L1) Ensure 'Allow unencrypted traffic' is set to 'Disabled'
+# ========================================================================
+- name: "18.9.97.1.2 (L1) 'Allow unencrypted traffic' is set to 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowUnencryptedTraffic setting (18.9.97.1.2)"
+   check_against: "{{ AllowUnencryptedTraffic_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WinRM\Client" -name
+     "AllowUnencryptedTraffic"|Select-Object
+     -ExpandProperty "AllowUnencryptedTraffic"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WinRM\Client'
+    name: "AllowUnencryptedTraffic"
+    data: "0"
+    type: dword
+  when: execute_18_9_97_1_2 == "YES"
+
+
+# =====================================================================
+# 18.9.97.1.3 (L1) Ensure 'Disallow Digest authentication' is set to
+# 'Enabled' (Scored)
+# =====================================================================
+- name: "18.9.97.1.3 (L1) 'Disallow Digest authentication' is set to 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowDigest setting (18.9.97.1.3)"
+   check_against: "{{ AllowDigest_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WinRM\Client" -name
+     "AllowDigest"|Select-Object -ExpandProperty "AllowDigest"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WinRM\Client'
+    name: "AllowDigest"
+    data: "0"
+    type: dword
+  when: execute_18_9_97_1_3 == "YES"
+
+
+# =====================================================================
+# 18.9.97.2.1 (L1) Ensure 'Allow Basic authentication' is set to
+# 'Disabled' (Scored) .
+# =====================================================================
+- name: "18.9.97.2.1 (L1) 'Allow Basic authentication' is set to 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowBasic setting (18.9.97.2.1)"
+   check_against: "{{ AllowBasic2_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service" -name
+     "AllowBasic"|Select-Object -ExpandProperty "AllowBasic"
+   win_regedit_cmd:
+    path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service'
+    name: "AllowBasic"
+    data: "0"
+    type: dword
+  when: execute_18_9_97_2_1 == "YES"
+
+
+# ======================================================================
+# 18.9.97.2.2 (L2) Ensure 'Allow remote server management through WinRM'
+# is set to 'Disabled' (Scored)
+# ======================================================================
+- name: "18.9.97.2.2 (L2) 'Allow remote server mngmnt through WinRM'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowAutoConfig setting (18.9.97.2.2)"
+   check_against: "{{ AllowAutoConfig_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WinRM\Service" -name
+     "AllowAutoConfig"|Select-Object -ExpandProperty "AllowAutoConfig"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WinRM\Service'
+    name: "AllowAutoConfig"
+    data: "1"
+    type: dword
+  when: execute_18_9_97_2_2 == "YES"
+
+
+# ========================================================================
+# 18.9.97.2.3 (L1) Ensure 'Allow unencrypted traffic' is set to 'Disabled'
+# ========================================================================
+- name: "18.9.97.2.3 (L1) 'Allow unencrypted traffic' is set to 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowUnencryptedTraffic setting (18.9.97.2.3)"
+   check_against: "{{ AllowUnencryptedTraffic2_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WinRM\Service" -name
+     "AllowUnencryptedTraffic"|Select-Object
+     -ExpandProperty "AllowUnencryptedTraffic"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WinRM\Service'
+    name: "AllowUnencryptedTraffic"
+    data: "0"
+    type: dword
+  when: execute_18_9_97_2_3 == "YES"
+
+
+# ======================================================================
+# 18.9.97.2.4 (L1) Ensure 'Disallow WinRM from storing RunAs credentials'
+# is set to 'Enabled' (Scored)
+# ======================================================================
+- name: "18.9.97.2.4 (L1) 'Dsllw WinRM frm storing RunAs credentials'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableRunAs setting (18.9.97.2.4)"
+   check_against: "{{ DisableRunAs_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service" -name
+     "DisableRunAs"|Select-Object -ExpandProperty "DisableRunAs"
+   win_regedit_cmd:
+    path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service'
+    name: "DisableRunAs"
+    data: "1"
+    type: dword
+  when: execute_18_9_97_2_4 == "YES"
+
+
+# =====================================================================
+# 18.9.98.1 (L2) Ensure 'Allow Remote Shell Access' is set to 'Disabled'
+# =====================================================================
+- name: "18.9.98.1 (L2) 'Allow Remote Shell Access' is set to 'Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AllowRemoteShellAccess setting (18.9.98.1)"
+   check_against: "{{ AllowRemoteShellAccess_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WinRM\Service\WinRS" -name
+     "AllowRemoteShellAccess"|Select-Object
+     -ExpandProperty "AllowRemoteShellAccess"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WinRM\Service\WinRS'
+    name: "AllowRemoteShellAccess"
+    data: "1"
+    type: dword
+  when: execute_18_9_98_1 == "YES"
+
+
+# =====================================================================
+# 18.9.99.2.1 (L1) Ensure 'Prevent users from modifying settings' is set to
+# 'Enabled'
+# =====================================================================
+- name: "18.9.99.2.1 (L1) 'Prevent users from modifying settings'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisallowExploitProtectionOverride setting (18.9.99.2.1)"
+   check_against: "{{ DisallowExploitProtectionOverride_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows
+     Defender Security Center\App and Browser protection" -name
+     "DisallowExploitProtectionOverride"|Select-Object
+     -ExpandProperty "DisallowExploitProtectionOverride"
+   win_regedit_cmd:
+    path: "{{ s_reg }}App and Browser protection"
+    name: "DisallowExploitProtectionOverride"
+    data: "1"
+    type: dword
+  when: execute_18_9_99_2_1 == "YES"
+
+
+# =====================================================================
+# 18.9.102.1.1 (L1) Ensure 'Manage preview builds' is set to 'Enabled:
+# Disable preview builds' (Scored)
+# =====================================================================
+- name: "18.9.102.1.1 'Manage preview builds'='Enabled:Disable preview builds'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The ManagePreviewBuilds setting (18.9.102.1.1)"
+   check_against: "{{ ManagePreviewBuilds_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+     -name "ManagePreviewBuilds"|Select-Object
+     -ExpandProperty "ManagePreviewBuilds"
+   win_regedit_cmd:
+    path: 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
+    name: "ManagePreviewBuilds"
+    data: "1"
+    type: dword
+  when: execute_18_9_102_1_1 == "YES"
+
+# =====================================================================
+- name: "18.9.102.1.1 'Manage preview builds'='Enabled:Disable preview builds'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The ManagePreviewBuilds setting (18.9.102.1.1)"
+   check_against: "{{ ManagePreviewBuildsPolicyValue_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+     -name "ManagePreviewBuildsPolicyValue"|Select-Object
+     -ExpandProperty "ManagePreviewBuildsPolicyValue"
+   win_regedit_cmd:
+    path: 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
+    name: "ManagePreviewBuildsPolicyValue"
+    data: "0"
+    type: dword
+  when: execute_18_9_102_1_1 == "YES"
+
+# =====================================================================
+# 18.9.102.1.2 (L1) Ensure 'Select when Feature Updates are received' is
+# set to 'Enabled: Current Branch for Business, 180 days' (Scored)
+# - If the "Allow Telemetry" policy is set to 0, this policy will have
+# no effect.
+# =====================================================================
+- name: "18.9.102.1.2 (L1)"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DeferFeatureUpdates setting (18.9.102.1.2)"
+   check_against: "{{ DeferFeatureUpdates_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" -name
+     "DeferFeatureUpdates"|Select-Object -ExpandProperty "DeferFeatureUpdates"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate'
+    name: "DeferFeatureUpdates"
+    data: "1"
+    type: dword
+  when: execute_18_9_102_1_2 == "YES"
+
+
+# =====================================================================
+- name: "18.9.102.1.2 (L1)"
+  include_tasks: win_check.yml
+  vars:
+   title: "The BranchReadinessLevel setting (18.9.102.1.2)"
+   check_against: "{{ BranchReadinessLevel_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" -name
+     "BranchReadinessLevel"|Select-Object -ExpandProperty "BranchReadinessLevel"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate'
+    name: "BranchReadinessLevel"
+    data: "2"
+    type: dword
+  when: execute_18_9_102_1_2 == "YES"
+
+
+# =====================================================================
+- name: "18.9.102.1.2 (L1)"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DeferFeatureUpdatesPeriodInDays setting (18.9.102.1.2)"
+   check_against: "{{ DeferFeatureUpdatesPeriodInDays_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" -name
+     "DeferFeatureUpdatesPeriodInDays"|Select-Object
+     -ExpandProperty "DeferFeatureUpdatesPeriodInDays"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate'
+    name: "DeferFeatureUpdatesPeriodInDays"
+    data: "180"
+    type: dword
+  when: execute_18_9_102_1_2 == "YES"
+
+
+# =====================================================================
+# 18.9.102.1.3 (L1) Ensure 'Select when Quality Updates are received' is
+# set to 'Enabled: 0 days' (Scored)  - If the 'Allow Telemetry' policy
+# is set to 0, this policy will have no effect.
+# =====================================================================
+- name: "18.9.102.1.3 (L1)"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DeferQualityUpdates setting (18.9.102.1.3)"
+   check_against: "{{ DeferQualityUpdates_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" -name
+     "DeferQualityUpdates"|Select-Object -ExpandProperty "DeferQualityUpdates"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate'
+    name: "DeferQualityUpdates"
+    data: "1"
+    type: dword
+  when: execute_18_9_102_1_3 == "YES"
+
+
+# =====================================================================
+- name: "18.9.102.1.3 (L1)"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DeferQualityUpdatesPeriodInDays settings (18.9.102.1.3)"
+   check_against: "{{ DeferQualityUpdatesPeriodInDays_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" -name
+     "DeferQualityUpdatesPeriodInDays"|Select-Object
+     -ExpandProperty "DeferQualityUpdatesPeriodInDays"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate'
+    name: "DeferQualityUpdatesPeriodInDays"
+    data: "0"
+    type: dword
+  when: execute_18_9_102_1_3 == "YES"
+
+
+# =====================================================================
+# 18.9.102.2 (L1) Ensure 'Configure Automatic Updates' is set to 'Enabled'
+# =====================================================================
+- name: "18.9.102.2 (L1) Ensure 'Configure Automatic Updates' set to 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The NoAutoUpdate setting (18.9.102.2)"
+   check_against: "{{ NoAutoUpdate_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -name
+     "NoAutoUpdate"|Select-Object -ExpandProperty "NoAutoUpdate"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU'
+    name: "NoAutoUpdate"
+    data: "1"
+    type: dword
+  when: execute_18_9_102_2 == "YES"
+
+
+# =====================================================================
+# 18.9.102.3 (L1) Ensure 'Configure Automatic Updates: Scheduled install
+# day' is set to '0 - Every day' (Scored)
+# =====================================================================
+- name: "18.9.102.3 (L1) 'Config Auto Updts: Schdld install day'='0-Every day'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The ScheduledInstallDay setting (18.9.102.3)"
+   check_against: "{{ ScheduledInstallDay_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -name
+     "ScheduledInstallDay"|Select-Object -ExpandProperty "ScheduledInstallDay"
+   win_regedit_cmd:
+    path: 'HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU'
+    name: "ScheduledInstallDay"
+    data: "0"
+    type: dword
+  when: execute_18_9_102_3 == "YES"
+
+
+# =====================================================================
+# 18.9.102.4 (L1) Ensure 'No auto-restart with logged on users for
+# scheduled automatic updates installations' is set to 'Disabled'
+# =====================================================================
+- name: "18.9.102.4 (L1) 'No auto-rstrt wth lggd..auto updts instlltns'='Dsbld'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The NoAutoRebootWithLoggedOnUsers setting (18.9.102.4)"
+   check_against: "{{ NoAutoRebootWithLoggedOnUsers_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -name
+     "NoAutoRebootWithLoggedOnUsers"|Select-Object
+     -ExpandProperty "NoAutoRebootWithLoggedOnUsers"
+   win_regedit_cmd:
+    path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+    name: "NoAutoRebootWithLoggedOnUsers"
+    data: "0"
+    type: dword
+  when: execute_18_9_102_4 == "YES"
+
+
+# =====================================================================
+# 19.7.4.1 (L1) Ensure 'Do not preserve zone information in file
+# attachments' is set to 'Disabled' (Scored)
+# =====================================================================
+- name: "19.7.4.1 (L1) 'Do not preserve zone inf in file attchments'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The SaveZoneInformation setting (19.7.4.1)"
+   check_against: "{{ SaveZoneInformation_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments"
+     -name "SaveZoneInformation"|Select-Object
+     -ExpandProperty "SaveZoneInformation"
+   win_regedit_cmd:
+    path: HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments
+    name: "SaveZoneInformation"
+    data: "2"
+    type: dword
+  when: execute_19_7_4_1 == "YES"
+
+
+# =====================================================================
+# 19.7.4.2 (L1) Ensure 'Notify antivirus programs when opening
+# attachments' is set to 'Enabled' (Scored)
+# =====================================================================
+- name: "19.7.4.2 (L1) 'Notify av programs when opening attachments'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The ScanWithAntiVirus setting (19.7.4.2)"
+   check_against: "{{ ScanWithAntiVirus_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments"
+     -name "ScanWithAntiVirus"|Select-Object -ExpandProperty "ScanWithAntiVirus"
+   win_regedit_cmd:
+    path: HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments
+    name: "ScanWithAntiVirus"
+    data: "3"
+    type: dword
+  when: execute_19_7_4_2 == "YES"
+
+
+# =====================================================================
+# 19.7.7.1 (L2) Ensure 'Configure Windows spotlight on Lock Screen' is
+# set to Disabled' (Scored)
+# =====================================================================
+- name: "19.7.7.1 (L2) 'Configure Windows spotlight on Lock Screen'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The ConfigureWindowsSpotlight setting (19.7.7.1)"
+   check_against: "{{ ConfigureWindowsSpotlight_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKCU:\Software\Policies\Microsoft\Windows\CloudContent" -name
+     "ConfigureWindowsSpotlight"|Select-Object
+     -ExpandProperty "ConfigureWindowsSpotlight"
+   win_regedit_cmd:
+    path: 'HKCU:\Software\Policies\Microsoft\Windows\CloudContent'
+    name: "ConfigureWindowsSpotlight"
+    data: "2"
+    type: dword
+  when: execute_19_7_7_1 == "YES"
+
+
+# =====================================================================
+# 19.7.7.2 (L1) Ensure 'Do not suggest third-party content in Windows
+# spotlight' is set to 'Enabled' (Scored)
+# =====================================================================
+- name: "19.7.7.2 (L1) 'Don't sggst thrd-party cntnt in Wndws sptlght'='Enbld'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableThirdPartySuggestions setting (19.7.7.2)"
+   check_against: "{{ DisableThirdPartySuggestions_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKCU:\Software\Policies\Microsoft\Windows\CloudContent" -name
+     "DisableThirdPartySuggestions"|Select-Object
+     -ExpandProperty "DisableThirdPartySuggestions"
+   win_regedit_cmd:
+    path: 'HKCU:\Software\Policies\Microsoft\Windows\CloudContent'
+    name: "DisableThirdPartySuggestions"
+    data: "1"
+    type: dword
+  when: execute_19_7_7_2 == "YES"
+
+
+# =====================================================================
+# 19.7.7.3 (L2) Ensure 'Do not use diagnostic data for tailored experiences'
+# is set to 'Enabled' (Scored)
+# =====================================================================
+- name: "19.7.7.3 'Don't use diag data for tailored experiences'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableTailoredExperiencesWithDiagnosticData setting (19.7.7.3)"
+   check_against: "{{ DisableTailoredExperiencesWithDiagnosticData_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKCU:\Software\Policies\Microsoft\Windows\CloudContent" -name
+     "DisableTailoredExperiencesWithDiagnosticData"|Select-Object
+     -ExpandProperty "DisableTailoredExperiencesWithDiagnosticData"
+   win_regedit_cmd:
+    path: 'HKCU:\Software\Policies\Microsoft\Windows\CloudContent'
+    name: "DisableTailoredExperiencesWithDiagnosticData"
+    data: "1"
+    type: dword
+  when: execute_19_7_7_3 == "YES"
+
+
+# =====================================================================
+# 19.7.7.4 (L2) Ensure 'Turn off all Windows spotlight features' is set
+#  to 'Enabled' (Scored)
+# =====================================================================
+- name: "19.7.7.4 (L2) 'Turn off all Windows spotlight features' = 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The DisableWindowsSpotlightFeatures setting (19.7.7.4)"
+   check_against: "{{ DisableWindowsSpotlightFeatures_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKCU:\Software\Policies\Microsoft\Windows\CloudContent" -name
+     "DisableWindowsSpotlightFeatures"|Select-Object
+     -ExpandProperty "DisableWindowsSpotlightFeatures"
+   win_regedit_cmd:
+    path: 'HKCU:\Software\Policies\Microsoft\Windows\CloudContent'
+    name: "DisableWindowsSpotlightFeatures"
+    data: "1"
+    type: dword
+  when: execute_19_7_7_4 == "YES"
+
+
+# =====================================================================
+# 19.7.26.1 (L1) Ensure 'Prevent users from sharing files within their
+# profile.' is set to 'Enabled' (Scored)
+# =====================================================================
+- name: "19.7.26.1 (L1) 'Prvnt usrs frm shring fls wthn their prfle.'='Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The NoInPlaceSharing setting (19.7.26.1)"
+   check_against: "{{ NoInPlaceSharing_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" -name
+     "NoInPlaceSharing"|Select-Object -ExpandProperty "NoInPlaceSharing"
+   win_regedit_cmd:
+    path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'
+    name: "NoInPlaceSharing"
+    data: "1"
+    type: dword
+  when: execute_19_7_26_1 == "YES"
+
+
+# =====================================================================
+# 19.7.41.1 (L1) Ensure 'Always install with elevated privileges' is
+# set to 'Disabled' (Scored)
+# =====================================================================
+- name: "19.7.41.1 (L1) 'Always install with elevated privileges'='Disabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The AlwaysInstallElevated setting (19.7.41.1)"
+   check_against: "{{ AlwaysInstallElevated2_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKCU:\Software\Policies\Microsoft\Windows\Installer" -name
+     "AlwaysInstallElevated"|Select-Object
+     -ExpandProperty "AlwaysInstallElevated"
+   win_regedit_cmd:
+    path: 'HKCU:\Software\Policies\Microsoft\Windows\Installer'
+    name: "AlwaysInstallElevated"
+    data: "0"
+    type: dword
+  when: execute_19_7_41_1 == "YES"
+
+
+# =====================================================================
+# 19.7.45.2.1 (L2) Ensure 'Prevent Codec Download' is set to 'Enabled' (Scored)
+# =====================================================================
+- name: "19.7.45.2.1 (L2) Ensure 'Prevent Codec Download' is set to 'Enabled'"
+  include_tasks: win_check.yml
+  vars:
+   title: "The PreventCodecDownload setting (19.7.45.2.1)"
+   check_against: "{{ PreventCodecDownload_cis }}"
+   win_shell_cmd: >
+     Get-ItemProperty -path
+     "HKCU:\Software\Policies\Microsoft\WindowsMediaPlayer" -name
+     "PreventCodecDownload"|Select-Object -ExpandProperty "PreventCodecDownload"
+   win_regedit_cmd:
+    path: 'HKCU:\Software\Policies\Microsoft\WindowsMediaPlayer'
+    name: "PreventCodecDownload"
+    data: "1"
+    type: dword
+  when: execute_19_7_45_2_1 == "YES"
