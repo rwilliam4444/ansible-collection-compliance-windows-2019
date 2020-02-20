@@ -53,6 +53,4 @@ __role_name__ | ansible-role-compliance-windows-user-rights-policy-2019.
 
 
 # Author Information:
-Richard M. Williams
-
-rmwill@us.ibm.com
+Richard M. Williams (williamsitv@yahoo.com)
