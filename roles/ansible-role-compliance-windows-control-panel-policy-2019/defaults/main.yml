@@ -1,0 +1,26 @@
+---
+# defaults file for ansible-role-compliance-windows-control-panel-policy-2019
+
+remediate: "NO"
+approved_windows_ver: "2019"
+execute_18_1_1_1: "YES"
+execute_18_1_1_2: "YES"
+execute_18_1_2_1: "YES"
+execute_18_1_2_3: "YES"
+execute_18_1_3: "YES"
+execute_19_1_3_1: "YES"
+execute_19_1_3_2: "YES"
+execute_19_1_3_3: "YES"
+execute_19_1_3_4: "YES"
+execute_19_5_1_1: "YES"
+spmw_reg: "HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\"
+curver_reg: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\"
+AllowOnlineTips_cis: "0"
+NoLockScreenCamera_cis: "1"
+NoLockScreenSlideshow_cis: "1"
+AllowInputPersonalization_cis: "0"
+ScreenSaveActive_cis: "1"
+SCRNSAVE_EXE_cis: "scrnsave.scr"
+ScreenSaverIsSecure_cis: "1"
+ScreenSaveTimeOut_cis: 900
+NoToastApplicationNotificationOnLockScreen_cis: "1"
